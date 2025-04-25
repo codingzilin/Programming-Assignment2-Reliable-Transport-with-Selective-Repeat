@@ -27,6 +27,8 @@
 #define WINDOWSIZE 6  /* the maximum number of buffered unacked packet */
 #define SEQSPACE 13   /* the min sequence space for SR must be at least 2*windowsize + 1 */
 #define NOTINUSE (-1) /* used to fill header fields that are not being used */
+#define SENT 1        /* sent the packet but not comfirmed */
+#define ACKED 2       /* confirm the packet */
 
 /* generic procedure to compute the checksum of a packet.  Used by both sender and receiver
    the simulator will overwrite part of your packet with 'z's.  It will not overwrite your
@@ -57,6 +59,7 @@ bool IsCorrupted(struct pkt packet)
 /********* Sender (A) variables and functions ************/
 
 static struct pkt buffer[WINDOWSIZE]; /* array for storing packets waiting for ACK */
+static int packet_status[WINDOWSIZE]; /* array for tracking status of each packet in window */
 static int windowfirst, windowlast;   /* array indexes of the first/last packet awaiting ACK */
 static int windowcount;               /* the number of packets currently awaiting an ACK */
 static int A_nextseqnum;              /* the next sequence number to be used by the sender */
@@ -81,9 +84,9 @@ void A_output(struct msg message)
     sendpkt.checksum = ComputeChecksum(sendpkt);
 
     /* put packet in window buffer */
-    /* windowlast will always be 0 for alternating bit; but not for GoBackN */
-    windowlast = (windowlast + 1) % WINDOWSIZE;
-    buffer[windowlast] = sendpkt;
+    int window_index = A_nextseqnum % WINDOWSIZE; // calculate window index
+    buffer[window_index] = sendpkt;
+    packet_status[window_index] = SENT; // track packet status
     windowcount++;
 
     /* send out packet */
