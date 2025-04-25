@@ -69,6 +69,7 @@ void A_output(struct msg message)
 {
   struct pkt sendpkt;
   int i;
+  int window_index;
 
   /* if not blocked waiting on ACK */
   if (windowcount < WINDOWSIZE)
@@ -84,9 +85,9 @@ void A_output(struct msg message)
     sendpkt.checksum = ComputeChecksum(sendpkt);
 
     /* put packet in window buffer */
-    int window_index = A_nextseqnum % WINDOWSIZE; // calculate window index
+    window_index = A_nextseqnum % WINDOWSIZE; /* calculate window index */
     buffer[window_index] = sendpkt;
-    packet_status[window_index] = SENT; // track packet status
+    packet_status[window_index] = SENT; /* track packet status */
     windowcount++;
 
     /* send out packet */
