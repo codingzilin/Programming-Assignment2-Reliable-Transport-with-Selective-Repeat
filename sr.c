@@ -116,8 +116,9 @@ void A_output(struct msg message)
 */
 void A_input(struct pkt packet)
 {
-  int ackcount = 0;
   int i;
+  int window_index;
+  bool can_slide = false;
 
   /* if received ACK is not corrupted */
   if (!IsCorrupted(packet))
@@ -125,6 +126,9 @@ void A_input(struct pkt packet)
     if (TRACE > 0)
       printf("----A: uncorrupted ACK %d is received\n", packet.acknum);
     total_ACKs_received++;
+
+    /* Find the window index for this packet */
+    window_index = packet.acknum % WINDOWSIZE;
 
     /* check if new ACK or duplicate */
     if (windowcount != 0)
