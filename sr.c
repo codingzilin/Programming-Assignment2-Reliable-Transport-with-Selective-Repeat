@@ -159,6 +159,12 @@ void A_input(struct pkt packet)
         }
 
         /* If slide the window, need to restart the timer if there are still packets */
+        if (can_slide)
+        {
+          stoptimer(A);
+          if (windowcount > 0)
+            starttimer(A, RTT);
+        }
       }
     }
   }
