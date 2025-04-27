@@ -180,20 +180,38 @@ void A_input(struct pkt packet)
 void A_timerinterrupt(void)
 {
   int i;
+  int window_index;
+  static int next_timeout = 0; /* track which packet to timeout next */
 
   if (TRACE > 0)
-    printf("----A: time out,resend packets!\n");
+    printf("----A: timer interrupt, checking for packets to resend\n");
 
-  for (i = 0; i < windowcount; i++)
+  if (windowcount > 0)
   {
+    /* find the next packet that needs to be resent */
+    for (i = 0; i < WINDOWSIZE; i++)
+    {
+      window_index = (next_timeout + i) % WINDOWSIZE;
 
-    if (TRACE > 0)
-      printf("---A: resending packet %d\n", (buffer[(windowfirst + i) % WINDOWSIZE]).seqnum);
+      /* only resend packets that have been sent but not yet ACKed */
+      if (packet_status[window_index] == SENT)
+      {
+        if (TRACE > 0)
+          printf("---A: resending packet %d\n", buffer[window_index].seqnum);
 
-    tolayer3(A, buffer[(windowfirst + i) % WINDOWSIZE]);
-    packets_resent++;
-    if (i == 0)
-      starttimer(A, RTT);
+        /* resend the packet */
+        tolayer3(A, buffer[window_index]);
+        packets_resent++;
+
+        /* move next_timeout pointer for next timer interrupt */
+        next_timeout = (window_index + 1) % WINDOWSIZE;
+
+        /* restart timer for the next timeout */
+        starttimer(A, RTT);
+
+        return;
+      }
+    }
   }
 }
 
