@@ -209,9 +209,11 @@ void A_timerinterrupt(void)
         /* restart timer for the next timeout */
         starttimer(A, RTT);
 
-        return;
+        return; /* only resend one packet per timer interrupt in SR */
       }
     }
+    /* update next_timeout */
+    next_timeout = (next_timeout + 1) % WINDOWSIZE;
   }
 }
 
