@@ -311,6 +311,15 @@ void B_input(struct pkt packet)
             packet_received[i] = 0; /* mark as delivered */
             i++;
           }
+
+          /* shift the buffer */
+          if (i > 0) {
+            for (int j = 0; j < WINDOWSIZE - i; j++) {
+              packet_received[j] = packet_received[j + i];
+              if (packet_received[j])
+                rcv_buffer[j] = rcv_buffer[j + i];
+            }
+          }
         }
       }
     }
