@@ -319,6 +319,11 @@ void B_input(struct pkt packet)
               if (packet_received[j])
                 rcv_buffer[j] = rcv_buffer[j + i];
             }
+
+            /* clear the end of the buffer */
+            for (int j = WINDOWSIZE - i; j < WINDOWSIZE; j++) {
+              packet_received[j] = 0;
+            }
           }
         }
       }
