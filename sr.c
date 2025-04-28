@@ -327,7 +327,32 @@ void B_input(struct pkt packet)
           }
         }
       }
+      /* send ACK for this packet */
+      sendpkt.acknum = packet.seqnum;
     }
+    else {
+      /* packet outside current window */
+      /* if it's a packet that already ACKed */
+      if (((RCV_BASE - packet.seqnum + SEQSPACE) % SEQSPACE) <= WINDOWSIZE) {
+        /* resend ACK for this old packet */
+        sendpkt.acknum = packet.seqnum;
+
+        if (TRACE > 0)
+          printf("----B: packet %d outside window, ignored\n", packet.seqnum);
+      }
+      else {
+        /* packet too far ahead */
+        if (TRACE > 0)
+          printf("----B: packet %d outside window, ignored\n", packet.seqnum);
+        return;
+      }
+    }
+  }
+  else {
+    /* corrupted packet, dont send ACK*/
+    if (TRACE > 0)
+      printf("----B: corrupted packet received, no ACK sent\n");
+    return;
   }
 
   /* create packet */
