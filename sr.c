@@ -368,6 +368,9 @@ void B_input(struct pkt packet)
 
   /* send out packet */
   tolayer3(B, sendpkt);
+
+  if (TRACE > 0)
+    printf("----B: sent ACK %d\n", sendpkt.acknum);
 }
 
 /* the following routine will be called once (only) before any other */
