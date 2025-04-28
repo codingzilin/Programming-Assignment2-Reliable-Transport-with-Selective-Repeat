@@ -240,6 +240,9 @@ void A_init(void)
 
 static int expectedseqnum; /* the sequence number expected next by the receiver */
 static int B_nextseqnum;   /* the sequence number for the next packets sent by B */
+static struct pkt rcv_buffer[WINDOWSIZE]; /* buffer for out of order packets */
+static int packet_received[WINDOWSIZE]; /* track which packets have been received */
+
 
 /* called from layer 3, when a packet arrives for layer 4 at B*/
 void B_input(struct pkt packet)
@@ -251,31 +254,66 @@ void B_input(struct pkt packet)
   const int RCV_BASE = expectedseqnum;
   const int RCV_MAX = (expectedseqnum + WINDOWSIZE - 1) % SEQSPACE;
 
-  /* if not corrupted and received packet is in order */
-  if ((!IsCorrupted(packet)) && (packet.seqnum == expectedseqnum))
-  {
+  /* check if packet is corrupted */
+  if (!IsCorrupted(packet)) {
     if (TRACE > 0)
-      printf("----B: packet %d is correctly received, send ACK!\n", packet.seqnum);
-    packets_received++;
+      printf("----B: uncorrupted packet %d is received\n", packet.seqnum);
 
-    /* deliver to receiving application */
-    tolayer5(B, packet.payload);
+    /* check if packet is within current window */
+    bool in_window = false;
 
-    /* send an ACK for the received packet */
-    sendpkt.acknum = expectedseqnum;
+    /* handle case when window hasn't wrapped around */
+    if (RCV_BASE <= RCV_MAX) {
+      in_window = (packet.seqnum >= RCV_BASE && packet.seqnum <= RCV_MAX);
+    }
+    /* handle case when window has wrapped around */
+    else {
+      in_window = (packet.seqnum >= RCV_BASE || packet.seqnum <= RCV_MAX);
+    }
 
-    /* update state variables */
-    expectedseqnum = (expectedseqnum + 1) % SEQSPACE;
-  }
-  else
-  {
-    /* packet is corrupted or out of order resend last ACK */
-    if (TRACE > 0)
-      printf("----B: packet corrupted or not expected sequence number, resend ACK!\n");
-    if (expectedseqnum == 0)
-      sendpkt.acknum = SEQSPACE - 1;
-    else
-      sendpkt.acknum = expectedseqnum - 1;
+    if (in_window) {
+      /* this is a new packet within the window */
+      int bufferIndex = (packet.seqnum - RCV_BASE + WINDOWSIZE) % WINDOWSIZE;
+
+      /* store packet in buffer if haven't received it */
+      if (packet_received[bufferIndex] == 0) {
+        rcv_buffer[bufferIndex] = packet;
+        packet_received[bufferIndex] = 1; 
+
+        if (TRACE > 0)
+          printf("----B: packet %d is stored in buffer\n", packet.seqnum);
+
+        /* if this is the packet we're expecting next, deliver it and any consecutive buffered packets */
+        if (packet.seqnum == expectedseqnum) {
+          /* deliver this packet */
+          tolayer5(B, packet.payload);
+          packets_received++;
+
+          if (TRACE > 0)
+            printf("----B: packet %d is delivered to layer 5\n", packet.seqnum);
+
+          /* update expected sequence number */
+          expectedseqnum = (expectedseqnum + 1) % SEQSPACE;
+          packet_received[0] = 0; /* mark as delivered */
+
+          /* check if any consecutive packet already buffered */
+          i = 1;
+          while (packet_received[i] == 1) {
+            /* deliver this packet */
+            tolayer5(B, rcv_buffer[i].payload);
+            packets_received++;
+
+            if (TRACE > 0)
+              printf("----B: packet %d is delivered to layer 5\n", expectedseqnum);
+
+            /* update expected sequence number */
+            expectedseqnum = (expectedseqnum + 1) % SEQSPACE;
+            packet_received[i] = 0; /* mark as delivered */
+            i++;
+          }
+        }
+      }
+    }
   }
 
   /* create packet */
