@@ -247,6 +247,10 @@ void B_input(struct pkt packet)
   struct pkt sendpkt;
   int i;
 
+  /* define constants for window management */
+  const int RCV_BASE = expectedseqnum;
+  const int RCV_MAX = (expectedseqnum + WINDOWSIZE - 1) % SEQSPACE;
+
   /* if not corrupted and received packet is in order */
   if ((!IsCorrupted(packet)) && (packet.seqnum == expectedseqnum))
   {
