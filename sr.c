@@ -337,7 +337,7 @@ void B_input(struct pkt packet)
         sendpkt.acknum = packet.seqnum;
 
         if (TRACE > 0)
-          printf("----B: packet %d outside window, ignored\n", packet.seqnum);
+          printf("----B: packet %d is earlier than expected, resending ACK\n", packet.seqnum);
       }
       else {
         /* packet too far ahead */
