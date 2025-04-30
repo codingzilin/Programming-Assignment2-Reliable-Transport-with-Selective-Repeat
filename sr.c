@@ -203,8 +203,8 @@ void A_timerinterrupt(void)
     starttimer(A, RTT);
 
         // return; /* only resend one packet per timer interrupt in SR */
-      }
-    }
+  }
+}
     /* update next_timeout */
     // next_timeout = (next_timeout + 1) % WINDOWSIZE;
 
@@ -255,6 +255,9 @@ void B_input(struct pkt packet)
   if (TRACE > 0)
     printf("----B: uncorrupted packet %d is received\n", packet.seqnum);
 
+  /* count all non-corrupted packets in SR */
+  packets_received++;
+  
   /* check if packet is within current window */
   bool in_window = false;
 
