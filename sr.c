@@ -167,7 +167,7 @@ void A_input(struct pkt packet)
         }
       }
       else if (TRACE > 0)
-        printf("----A: duplicate ACK received, do nothing!\n", packet.acknum);
+        printf("----A: duplicate ACK %d received, do nothing!\n", packet.acknum);
     }
     else if (TRACE > 0)
       printf("----A: ACK %d outside current window\n", packet.acknum);
