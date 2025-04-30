@@ -255,9 +255,9 @@ void B_input(struct pkt packet)
   const int RCV_MAX = (expectedseqnum + WINDOWSIZE - 1) % SEQSPACE;
 
   /* check if packet is corrupted */
-  if (!IsCorrupted(packet)) {
+  if (IsCorrupted(packet)) {
     if (TRACE > 0)
-      printf("----B: packet corrupted or not expected sequence number, resend ACK!\n");
+      printf("----B: corrupted packet received, ignored\n");
     return;
   }
 
