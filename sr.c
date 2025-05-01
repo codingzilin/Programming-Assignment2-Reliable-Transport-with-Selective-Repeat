@@ -25,10 +25,8 @@
 
 #define RTT 16.0      /* round trip time.  MUST BE SET TO 16.0 when submitting assignment */
 #define WINDOWSIZE 6  /* the maximum number of buffered unacked packet */
-#define SEQSPACE 13   /* the min sequence space for SR must be at least 2*windowsize + 1 */
+#define SEQSPACE 12   /* the min sequence space for SR must be at least 2*windowsize + 1 */
 #define NOTINUSE (-1) /* used to fill header fields that are not being used */
-#define SENT 1        /* sent the packet but not comfirmed */
-#define ACKED 2       /* confirm the packet */
 
 /* generic procedure to compute the checksum of a packet.  Used by both sender and receiver
    the simulator will overwrite part of your packet with 'z's.  It will not overwrite your
@@ -59,8 +57,9 @@ bool IsCorrupted(struct pkt packet)
 /********* Sender (A) variables and functions ************/
 
 static struct pkt buffer[WINDOWSIZE]; /* array for storing packets waiting for ACK */
-static int packet_status[WINDOWSIZE]; /* array for tracking status of each packet in window */
-static int windowfirst, windowlast;   /* array indexes of the first/last packet awaiting ACK */
+static int timers[WINDOWSIZE];        /* array for tracking which timers are active */
+static bool acked[WINDOWSIZE];        /* array for tracking which packets are ACKed */
+static int send_base;               /* the base of the sender's window */
 static int windowcount;               /* the number of packets currently awaiting an ACK */
 static int A_nextseqnum;              /* the next sequence number to be used by the sender */
 
@@ -69,7 +68,7 @@ void A_output(struct msg message)
 {
   struct pkt sendpkt;
   int i;
-  int window_index;
+  int bufferindex;
 
   /* if not blocked waiting on ACK */
   if (windowcount < WINDOWSIZE)
@@ -85,10 +84,9 @@ void A_output(struct msg message)
     sendpkt.checksum = ComputeChecksum(sendpkt);
 
     /* put packet in window buffer */
-    window_index = A_nextseqnum % WINDOWSIZE; /* calculate window index */
-    buffer[window_index] = sendpkt;
-    packet_status[window_index] = SENT; /* track packet status */
-    windowcount++;
+    bufferindex = A_nextseqnum % WINDOWSIZE; /* calculate buffer index */
+    buffer[bufferindex] = sendpkt;
+    acked[bufferindex] = false; /* track packet status */
 
     /* send out packet */
     if (TRACE > 0)
@@ -96,9 +94,10 @@ void A_output(struct msg message)
     tolayer3(A, sendpkt);
 
     /* start timer if first packet in window */
-    if (windowcount == 1)
-      starttimer(A, RTT);
+    timers[bufferindex] = A_nextseqnum;
+    starttimer(A, RTT);
 
+    windowcount++; 
     /* get next sequence number, wrap back to 0 */
     A_nextseqnum = (A_nextseqnum + 1) % SEQSPACE;
   }
@@ -116,7 +115,6 @@ void A_output(struct msg message)
 */
 void A_input(struct pkt packet)
 {
-  int i;
   int window_index;
   bool can_slide = false;
 
@@ -127,16 +125,10 @@ void A_input(struct pkt packet)
       printf("----A: uncorrupted ACK %d is received\n", packet.acknum);
     total_ACKs_received++;
 
-    /* Find the window index for this packet */
-    window_index = packet.acknum % WINDOWSIZE;
-
-    /* check if this ACK is for a packet in current window */
     int base_seqnum = (A_nextseqnum - windowcount + SEQSPACE) % SEQSPACE;
-    int max_seqnum = (base_seqnum + windowcount - 1) % SEQSPACE;
-
-    if (((base_seqnum <= max_seqnum) && (packet.acknum >= base_seqnum && packet.acknum <= max_seqnum)) ||
-        ((base_seqnum > max_seqnum) && (packet.acknum >= base_seqnum || packet.acknum <= max_seqnum)))
-    {
+    /* Find the window index for this packet */
+    if (in_window(base_seqnum, packet.acknum, WINDOWSIZE)) {
+      window_index = packet.acknum % WINDOWSIZE;
       /* This is a valid ACK for a packet in the window */
       if (packet_status[window_index] == SENT)
       {
@@ -145,7 +137,7 @@ void A_input(struct pkt packet)
         new_ACKs++;
 
         if (TRACE > 0)
-          printf("----A: ACK %d is accepted\n", packet.acknum);
+          printf("----A: ACK %d accepted and marked as ACKED\n", packet.acknum);
 
         /* Check if can slide the window */
         /* Window can slide if the first packet in the window have been ACKed */
@@ -167,7 +159,7 @@ void A_input(struct pkt packet)
         }
       }
       else if (TRACE > 0)
-        printf("----A: duplicate ACK %d received, do nothing!\n", packet.acknum);
+        printf("----A: duplicate ACK received, do nothing!\n", packet.acknum);
     }
     else if (TRACE > 0)
       printf("----A: ACK %d outside current window\n", packet.acknum);
@@ -186,24 +178,21 @@ void A_timerinterrupt(void)
   if (TRACE > 0)
     printf("----A: time out,resend packets!\n");
 
-  if (windowcount > 0)
-  {
+  for (int i = 0; i < WINDOWSIZE; i++) {
+    if (packet_status[i] == SENT) {
+      /* resend the packet */
+      tolayer3(A, buffer[i]);
+      packets_resent++;
+    }
+  }
+  
+    if (windowcount > 0)
     /* find the next packet that needs to be resent */
-    if (TRACE > 0)
-      printf("---A: resending packet %d\n", buffer[windowfirst].seqnum);
-
-    /* resend the packet */
-    tolayer3(A, buffer[windowfirst]);
-    packets_resent++;
-
         /* move next_timeout pointer for next timer interrupt */
         // next_timeout = (window_index + 1) % WINDOWSIZE;
-
         /* restart timer for the next timeout */
     starttimer(A, RTT);
-
         // return; /* only resend one packet per timer interrupt in SR */
-  }
 }
     /* update next_timeout */
     // next_timeout = (next_timeout + 1) % WINDOWSIZE;
