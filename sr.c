@@ -205,15 +205,12 @@ void A_init(void)
   int i;
   /* initialise A's window, buffer and sequence number */
   A_nextseqnum = 0; /* A starts with seq num 0, do not change this */
-  windowfirst = 0; /* initialize window variables */
-  windowlast = -1; /* windowlast is where the last packet sent is stored.
-       new packets are placed in winlast + 1
-       so initially this is set to -1
-     */
+  send_base = 0; /* the base of the sender's window */
   windowcount = 0;
   /* initialize all packet_status entries to indicate they're not in use */
   for (i = 0; i < WINDOWSIZE; i++) {
-    packet_status[i] = NOTINUSE; 
+    acked[i] = true; /* initially all slots are available */
+    timers[i] = NOTINUSE; 
   }  
 }
 
