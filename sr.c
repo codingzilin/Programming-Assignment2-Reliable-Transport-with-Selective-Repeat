@@ -196,7 +196,7 @@ void A_timerinterrupt(void)
       break;
     }
   }
-}
+}  
 
 /* the following routine will be called once (only) before any other */
 /* entity A routines are called. You can use it to do any initialization */
@@ -216,10 +216,10 @@ void A_init(void)
 
 /********* Receiver (B)  variables and procedures ************/
 
-static int expectedseqnum; /* the sequence number expected next by the receiver */
+static int recv_base; /* Base sequence number expected by receiver */
 static int B_nextseqnum;   /* the sequence number for the next packets sent by B */
 static struct pkt rcv_buffer[WINDOWSIZE]; /* buffer for out of order packets */
-static int packet_received[WINDOWSIZE]; /* track which packets have been received */
+static bool received[WINDOWSIZE]; /* track which packets have been received */
 
 
 /* called from layer 3, when a packet arrives for layer 4 at B*/
@@ -227,141 +227,84 @@ void B_input(struct pkt packet)
 {
   struct pkt sendpkt;
   int i;
+  int index;
 
-  /* define constants for window management */
-  const int RCV_BASE = expectedseqnum;
-  const int RCV_MAX = (expectedseqnum + WINDOWSIZE - 1) % SEQSPACE;
+  /* check if packet is not corrupted */
+  if (!IsCorrupted(packet)) {
+    /* calculate expected window */
+    int window_end = (recv_base + WINDOWSIZE - 1) % SEQSPACE;
 
-  /* check if packet is corrupted */
-  if (IsCorrupted(packet)) {
-    if (TRACE > 0)
-      printf("----B: corrupted packet received, ignored\n");
-    return;
-  }
-
-  if (TRACE > 0)
-    printf("----B: uncorrupted packet %d is received\n", packet.seqnum);
-
-  /* count all non-corrupted packets in SR */
-  packets_received++;
-  
-  /* check if packet is within current window */
-  bool in_window = false;
-
-  /* handle case when window hasn't wrapped around */
-  if (RCV_BASE <= RCV_MAX) {
-    in_window = (packet.seqnum >= RCV_BASE && packet.seqnum <= RCV_MAX);
-  }
-  /* handle case when window has wrapped around */
-  else {
-    in_window = (packet.seqnum >= RCV_BASE || packet.seqnum <= RCV_MAX);
-  }
-
-  if (in_window) {
-    /* this is a new packet within the window */
-    int bufferIndex = (packet.seqnum - RCV_BASE + WINDOWSIZE) % WINDOWSIZE;
-
-    /* store packet in buffer if haven't received it */
-    if (packet_received[bufferIndex] == 0) {
-      rcv_buffer[bufferIndex] = packet;
-      packet_received[bufferIndex] = 1; 
-
+    /* check if packet is within receive window */
+    bool in_window = (recv_base <= window_end && packet.seqnum >= recv_base && packet.seqnum <= window_end) ||
+                     (recv_base > window_end && (packet.seqnum >= recv_base || packet.seqnum <= window_end));
+    
+    
+    if (in_window) {
+      /* packet is within receive window */
       if (TRACE > 0)
-        printf("----B: packet %d is stored in buffer\n", packet.seqnum);
+        printf("----B: packet %d is correctly received, send ACK!\n", packet.seqnum);
+      
+      packets_received++;
+      index = packet.seqnum % WINDOWSIZE; /* calculate buffer index */
+      /* store packet and mark as received */
+      rcv_buffer[index] = packet;
+      received[index] = true;
 
-      /* if this is the packet we're expecting next, deliver it and any consecutive buffered packets */
-      if (packet.seqnum == expectedseqnum) {
-        /* deliver this packet */
-        tolayer5(B, packet.payload);
-        packets_received++;
-
-        if (TRACE > 0)
-          printf("----B: packet %d is delivered to layer 5\n", packet.seqnum);
-
-        /* update expected sequence number */
-        expectedseqnum = (expectedseqnum + 1) % SEQSPACE;
-        packet_received[0] = 0; /* mark as delivered */
-
-        /* check if any consecutive packet already buffered */
-        i = 1;
-        while (i < WINDOWSIZE && packet_received[i] == 1) {
-          /* deliver this packet */
-          tolayer5(B, rcv_buffer[i].payload);
-          packets_received++;
-
-          if (TRACE > 0)
-            printf("----B: packet %d is delivered to layer 5\n", (expectedseqnum - 1 + i) % SEQSPACE);
-
-          /* update expected sequence number */
-          expectedseqnum = (expectedseqnum + 1) % SEQSPACE;
-          packet_received[i] = 0; /* mark as delivered */
-          i++;
-        }
-
-        /* shift the buffer */
-        if (i > 0) {
-          for (int j = 0; j < WINDOWSIZE - i; j++) {
-            packet_received[j] = packet_received[j + i];
-            if (packet_received[j])
-              rcv_buffer[j] = rcv_buffer[j + i];
-          }
-
-          /* clear the end of the buffer */
-          for (int j = WINDOWSIZE - i; j < WINDOWSIZE; j++) {
-            packet_received[j] = 0;
-          }
+      /* if packet.seqnum equals recv_base, deliver it and any consecutive packets */
+      if (packet.seqnum == recv_base) {
+        while (received[recv_base % WINDOWSIZE]) {
+          /* deliver packet to upper layer */
+          tolayer5(B, rcv_buffer[recv_base % WINDOWSIZE].payload);
+          
+          /* mark as not received for future use */
+          received[recv_base % WINDOWSIZE] = false;
+          
+          /* advance base */
+          recv_base = (recv_base + 1) % SEQSPACE;
         }
       }
-    }
-    /* send ACK for this packet */
-    sendpkt.acknum = packet.seqnum;
-    }
-    else {
-      /* packet outside current window */
-      /* if it's a packet that already ACKed */
-      if (((RCV_BASE - packet.seqnum + SEQSPACE) % SEQSPACE) <= WINDOWSIZE) {
-        /* resend ACK for this old packet */
-        sendpkt.acknum = packet.seqnum;
 
-        if (TRACE > 0)
-          printf("----B: packet %d outside window, ignored\n", packet.seqnum);
-      }
-      else {
-        /* packet too far ahead */
-        if (TRACE > 0)
-          printf("----B: packet %d outside window, ignored\n", packet.seqnum);
-        return;
-      }
+      /* send ACK for the received packet */
+      sendpkt.acknum = packet.seqnum;
+    } else {
+      /* packet outside receive window, send ACK anyway */
+      if (TRACE > 0)
+        printf("----B: packet outside receive window, send ACK!\n");
+      sendpkt.acknum = packet.seqnum;
+    }
+  } else {
+      if (TRACE > 0)
+        printf("----B: packet corrupted or not expected sequence number, resend ACK!\n");
+
+      if (recv_base == 0)
+        sendpkt.acknum = SEQSPACE - 1;
+      else
+        sendpkt.acknum = recv_base - 1;
     }
 
-  /* create packet */
-  sendpkt.seqnum = B_nextseqnum;
-  B_nextseqnum = (B_nextseqnum + 1) % 2;
+    sendpkt.seqnum = B_nextseqnum;
+    B_nextseqnum = (B_nextseqnum + 1) % 2;
 
-  /* we don't have any data to send.  fill payload with 0's */
-  for (i = 0; i < 20; i++)
-    sendpkt.payload[i] = '0';
+    for (i = 0; i < 20; i++)
+      sendpkt.payload[i] = '0';
 
-  /* computer checksum */
-  sendpkt.checksum = ComputeChecksum(sendpkt);
+    sendpkt.checksum = ComputeChecksum(sendpkt);
 
-  /* send out packet */
-  tolayer3(B, sendpkt);
-
-  if (TRACE > 0)
-    printf("----B: sent ACK %d\n", sendpkt.acknum);
-}
+    tolayer3(B, sendpkt); 
+  }
+  
+  
 
 /* the following routine will be called once (only) before any other */
 /* entity B routines are called. You can use it to do any initialization */
 void B_init(void)
 {
   int i;
-  expectedseqnum = 0;
+  recv_base = 0;
   B_nextseqnum = 1;
   /* initialize the receive buffer and packet */
   for (i = 0; i < WINDOWSIZE; i++) {
-    packet_received[i] = 0; /* mark all buffer slots as empty */
+    received[i] = false; /* mark all buffer slots as empty */
   }
 }
 
