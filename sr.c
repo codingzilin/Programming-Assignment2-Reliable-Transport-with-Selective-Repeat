@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdbool.h>
 #include "emulator.h"
 #include "sr.h"
 
@@ -23,6 +22,8 @@
    - adapted to Selective Repeat implementation
 **********************************************************************/
 
+#define true 1
+#define false 0
 #define RTT 16.0      /* round trip time.  MUST BE SET TO 16.0 when submitting assignment */
 #define WINDOWSIZE 6  /* the maximum number of buffered unacked packet */
 #define SEQSPACE 12   /* the min sequence space for SR must be at least 2*windowsize + 1 */
@@ -46,7 +47,7 @@ int ComputeChecksum(struct pkt packet)
   return checksum;
 }
 
-bool IsCorrupted(struct pkt packet)
+int IsCorrupted(struct pkt packet)
 {
   if (packet.checksum == ComputeChecksum(packet))
     return (0);
@@ -58,7 +59,7 @@ bool IsCorrupted(struct pkt packet)
 
 static struct pkt buffer[WINDOWSIZE]; /* array for storing packets waiting for ACK */
 static int timers[WINDOWSIZE];        /* array for tracking which timers are active */
-static bool acked[WINDOWSIZE];        /* array for tracking which packets are ACKed */
+static int acked[WINDOWSIZE];        /* array for tracking which packets are ACKed */
 static int windowfirst, windowlast;     /* array indexes of the first/last packet in window */
 static int windowcount;               /* the number of packets currently awaiting an ACK */
 static int A_nextseqnum;              /* the next sequence number to be used by the sender */
@@ -176,7 +177,6 @@ void A_input(struct pkt packet)
 void A_timerinterrupt(void)
 {
   int i;
-  // static int next_timeout = 0; /* track which packet to timeout next */
 
   if (TRACE > 0)
     printf("----A: time out,resend packets!\n");
